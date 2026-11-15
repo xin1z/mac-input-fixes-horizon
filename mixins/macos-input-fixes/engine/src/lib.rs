@@ -12,13 +12,14 @@
 //! M5 adds it. The normative pseudocode is §6.1 of the port plan.
 //!
 //! M1 scope: `shift_wheel_fold` (MC-121772) and `clamp_legacy_wheel` only.
-//! The trackpad state machine (`points_per_notch`, `Phase`, [`Gesture`]) is M2;
-//! the remaining options are M3. They are declared here already so the helper
-//! and the tests do not change shape between milestones.
+//! M2 adds the `Started`/`Moved` grouping state machine for precise input
+//! (`points_per_notch`, [`Phase`], [`Gesture`]); the remaining options are M3.
+//! They are declared here already so the helper and the tests do not change
+//! shape between milestones.
 
 use std::sync::{Mutex, MutexGuard};
 
-/// Default trackpad sensitivity: GUI points per notch (M2 uses it).
+/// Default trackpad sensitivity: GUI points per notch.
 pub const POINTS_PER_NOTCH: f64 = 20.0;
 
 /// One wheel event, in the units winit gives the game.
@@ -133,6 +134,24 @@ fn sgn(v: f64) -> f64 {
     }
 }
 
+/// Whether precise (trackpad / Magic Mouse) deltas get custom handling.
+/// `points_per_notch = 0` (or a nonsensical value) means "leave them alone":
+/// the helper then passes winit's `PixelDelta` through untouched.
+fn points_per_notch_enabled(points_per_notch: f64) -> bool {
+    points_per_notch.is_finite() && points_per_notch > 0.0
+}
+
+/// Whether the helper should rewrite `MouseScrollDelta::PixelDelta` events.
+pub fn precise_scrolling_enabled() -> bool {
+    points_per_notch_enabled(lock(&SETTINGS).points_per_notch)
+}
+
+/// A whole number of notches, rounded towards zero (the `.mm`'s
+/// `sgn(v) * (int)(|v| / sensitivity)` in notch units).
+fn trunc_step(v: f64) -> f64 {
+    if v.is_finite() { v.trunc() } else { 0.0 }
+}
+
 /// Converts winit's units to notches.
 fn raw_units(delta: Delta, scale_factor: f64, settings: &Settings) -> (f64, f64) {
     match delta {
@@ -144,9 +163,13 @@ fn raw_units(delta: Delta, scale_factor: f64, settings: &Settings) -> (f64, f64)
             } else {
                 1.0
             };
-            let per_notch = settings.points_per_notch;
-            if per_notch.is_finite() && per_notch > 0.0 {
-                (x / scale / per_notch, y / scale / per_notch)
+            if points_per_notch_enabled(settings.points_per_notch) {
+                let per_notch = settings.points_per_notch;
+                let to_notches = |v: f64| {
+                    let notch = v / scale / per_notch;
+                    if notch.is_finite() { notch } else { 0.0 }
+                };
+                (to_notches(x), to_notches(y))
             } else {
                 // `0.0` disables custom trackpad handling: pass the pixels on.
                 (x, y)
@@ -157,17 +180,13 @@ fn raw_units(delta: Delta, scale_factor: f64, settings: &Settings) -> (f64, f64)
 
 /// Pure, testable core. `None` = swallow the wheel event.
 ///
-/// M1 applies `shift_wheel_fold` and `clamp_legacy_wheel` to legacy
-/// (`Delta::Line`) events and never swallows. The `Delta::Pixel` branch only
-/// converts units here; the helper leaves precise gestures untouched until M2
-/// adds the `Phase` state machine.
+/// Legacy (`Delta::Line`) events get `shift_wheel_fold` and
+/// `clamp_legacy_wheel`; precise (`Delta::Pixel`) events get the original's
+/// `Started`/`Moved` grouping (`.mm` lines 64–110). M1/M2 never swallow.
 pub fn step(state: &mut Gesture, settings: &Settings, input: WheelIn) -> Option<(f64, f64)> {
-    // M2 owns the gesture remainder; M1 must still accept the state so the
-    // public shape does not change between milestones.
-    let _ = state;
-
     let WheelIn {
         delta,
+        phase,
         scale_factor,
         shift,
         ..
@@ -182,15 +201,50 @@ pub fn step(state: &mut Gesture, settings: &Settings, input: WheelIn) -> Option<
         x = 0.0;
     }
 
-    // Legacy wheels report accelerated, fractional steps that vanilla would
-    // read as multiple notches; one event is one notch (`.mm` lines 116–119).
-    if legacy && settings.clamp_legacy_wheel {
-        x = sgn(x);
-        y = sgn(y);
+    if legacy {
+        // Legacy wheels report accelerated, fractional steps that vanilla would
+        // read as multiple notches; one event is one notch (`.mm` lines 116–119).
+        if settings.clamp_legacy_wheel {
+            x = sgn(x);
+            y = sgn(y);
+        }
+    } else if points_per_notch_enabled(settings.points_per_notch) {
+        // A precise gesture is a stream of small pixel deltas; group them into
+        // whole notches so one flick is not a hundred scroll events (`.mm`
+        // lines 64–110). `x`/`y` are already notches, so the threshold is 1.
+        match phase {
+            Phase::Started => {
+                // The first event of a gesture always moves once, so a short
+                // flick still changes a slot; keep the rest (never negative).
+                let acc_x = sgn(x) * (x.abs() - 1.0).max(0.0);
+                let acc_y = sgn(y) * (y.abs() - 1.0).max(0.0);
+                *state = Gesture { acc_x, acc_y };
+                x = sgn(x);
+                y = sgn(y);
+            }
+            Phase::Moved | Phase::Ended | Phase::Cancelled => {
+                state.acc_x += x;
+                state.acc_y += y;
+                x = 0.0;
+                y = 0.0;
+                if state.acc_x.abs() >= 1.0 {
+                    x = trunc_step(state.acc_x);
+                    state.acc_x = sgn(state.acc_x) * (state.acc_x.abs() % 1.0);
+                    // A gesture is single-axis: the other axis' partial notch
+                    // was probably not intended (`.mm` lines 93–108).
+                    state.acc_y = 0.0;
+                }
+                if state.acc_y.abs() >= 1.0 {
+                    y = trunc_step(state.acc_y);
+                    state.acc_y = sgn(state.acc_y) * (state.acc_y.abs() % 1.0);
+                    state.acc_x = 0.0;
+                }
+            }
+        }
     }
 
-    // M1 has no option that swallows an event; M3's `lock_scroll_while_attacking`
-    // and M4's momentum gate will return `None` from here.
+    // M1/M2 have no option that swallows an event; M3's
+    // `lock_scroll_while_attacking` and M4's momentum gate will return `None`.
     Some((x, y))
 }
 
