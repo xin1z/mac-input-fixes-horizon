@@ -13,11 +13,13 @@
 //!
 //! M1 scope: `shift_wheel_fold` (MC-121772) and `clamp_legacy_wheel` only.
 //! M2 adds the `Started`/`Moved` grouping state machine for precise input
-//! (`points_per_notch`, [`Phase`], [`Gesture`]); the remaining options are M3.
-//! They are declared here already so the helper and the tests do not change
-//! shape between milestones.
+//! (`points_per_notch`, [`Phase`], [`Gesture`]). M3 adds `reverse_scrolling`,
+//! `reverse_hotbar`, `lock_scroll_while_attacking`, `momentum_hotbar`,
+//! `merge_horizontal_into_vertical` and the config file. Momentum *detection*
+//! is M4; the gate is here.
 
-use std::sync::{Mutex, MutexGuard};
+use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Default trackpad sensitivity: GUI points per notch.
 pub const POINTS_PER_NOTCH: f64 = 20.0;
@@ -182,15 +184,26 @@ fn raw_units(delta: Delta, scale_factor: f64, settings: &Settings) -> (f64, f64)
 ///
 /// Legacy (`Delta::Line`) events get `shift_wheel_fold` and
 /// `clamp_legacy_wheel`; precise (`Delta::Pixel`) events get the original's
-/// `Started`/`Moved` grouping (`.mm` lines 64–110). M1/M2 never swallow.
+/// `Started`/`Moved` grouping (`.mm` lines 64–110). After that, in order:
+/// the attack lock, the momentum gate, the optional hotbar merge, and the
+/// reverse options.
 pub fn step(state: &mut Gesture, settings: &Settings, input: WheelIn) -> Option<(f64, f64)> {
     let WheelIn {
         delta,
         phase,
         scale_factor,
+        zone,
+        attacking,
         shift,
-        ..
+        momentum,
     } = input;
+
+    // The lock only applies to the hotbar: with a screen open the person is
+    // not mining or using, and the original gates on the same condition.
+    if settings.lock_scroll_while_attacking && attacking && zone == Zone::Hotbar {
+        return None;
+    }
+
     let legacy = matches!(delta, Delta::Line(..));
     let (mut x, mut y) = raw_units(delta, scale_factor, settings);
 
@@ -243,8 +256,28 @@ pub fn step(state: &mut Gesture, settings: &Settings, input: WheelIn) -> Option<
         }
     }
 
-    // M1/M2 have no option that swallows an event; M3's
-    // `lock_scroll_while_attacking` and M4's momentum gate will return `None`.
+    // Inertia must not turn the hotbar; GUI lists keep their vanilla inertia.
+    // M4 supplies `momentum`; until then the helper passes `false`.
+    if momentum && !settings.momentum_hotbar && zone == Zone::Hotbar {
+        return None;
+    }
+
+    // The Java mod merges the axes for the hotbar so a Magic Mouse's horizontal
+    // scroll picks a slot (MinecraftMixin.java:124–128). Horizon already falls
+    // back to `-x` when `y == 0` (vanilla), so this is off by default.
+    if settings.merge_horizontal_into_vertical && zone == Zone::Hotbar {
+        y += x;
+        x = 0.0;
+    }
+
+    if settings.reverse_scrolling {
+        x = -x;
+        y = -y;
+    }
+    if settings.reverse_hotbar && zone == Zone::Hotbar {
+        y = -y;
+    }
+
     Some((x, y))
 }
 
@@ -265,6 +298,84 @@ pub fn set_settings(settings: Settings) {
 /// Forgets the partial gesture (tests; the helper may call it on focus loss).
 pub fn reset() {
     *lock(&GESTURE) = Gesture::default();
+}
+
+/// Set once the config file has been looked at; later wheel events skip the IO.
+static CONFIG_LOADED: OnceLock<()> = OnceLock::new();
+
+/// Reads the mod's config file once and applies it as the process-wide settings.
+///
+/// A missing file, an unreadable file and malformed lines all leave the
+/// defaults in place: a broken config must not take the wheel down. Later calls
+/// do nothing; restart the game to reload a changed file.
+pub fn init_config(path: &Path) {
+    CONFIG_LOADED.get_or_init(|| {
+        if let Some(settings) = load_config(path) {
+            set_settings(settings);
+        }
+    });
+}
+
+/// Reads and parses a config file; `None` when it cannot be read.
+pub fn load_config(path: &Path) -> Option<Settings> {
+    let text = std::fs::read_to_string(path).ok()?;
+    Some(parse_config(&text))
+}
+
+/// The config file's `key = value` subset, read over the defaults.
+///
+/// One setting per line; `#` starts a comment; blank lines are skipped; keys
+/// are the [`Settings`] fields; unknown keys and malformed values are ignored.
+/// There are no tables, arrays or strings, which is all this mod needs.
+pub fn parse_config(text: &str) -> Settings {
+    let mut settings = Settings::default();
+    for line in text.lines() {
+        let line = line.trim_start_matches('\u{feff}').trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = match line.find('#') {
+            Some(index) => line[..index].trim(),
+            None => line,
+        };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        apply_setting(&mut settings, key.trim(), value.trim());
+    }
+    settings
+}
+
+fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
+    match key {
+        "shift_wheel_fold" => set_bool(&mut settings.shift_wheel_fold, value),
+        "clamp_legacy_wheel" => set_bool(&mut settings.clamp_legacy_wheel, value),
+        "points_per_notch" => {
+            if let Ok(notches) = value.parse::<f64>()
+                && notches.is_finite()
+            {
+                settings.points_per_notch = notches;
+            }
+        }
+        "reverse_scrolling" => set_bool(&mut settings.reverse_scrolling, value),
+        "reverse_hotbar" => set_bool(&mut settings.reverse_hotbar, value),
+        "momentum_hotbar" => set_bool(&mut settings.momentum_hotbar, value),
+        "lock_scroll_while_attacking" => {
+            set_bool(&mut settings.lock_scroll_while_attacking, value);
+        }
+        "merge_horizontal_into_vertical" => {
+            set_bool(&mut settings.merge_horizontal_into_vertical, value);
+        }
+        _ => {}
+    }
+}
+
+fn set_bool(target: &mut bool, value: &str) {
+    match value.to_ascii_lowercase().as_str() {
+        "true" => *target = true,
+        "false" => *target = false,
+        _ => {}
+    }
 }
 
 #[cfg(test)]

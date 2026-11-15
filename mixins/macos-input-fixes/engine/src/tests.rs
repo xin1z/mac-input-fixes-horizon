@@ -426,3 +426,216 @@ fn set_settings_forgets_the_partial_gesture() {
     set_settings(Settings::default());
     reset();
 }
+
+// M3: options and the config file.
+
+fn run_with(settings: &Settings, input: WheelIn) -> Option<(f64, f64)> {
+    let mut gesture = Gesture::default();
+    step(&mut gesture, settings, input)
+}
+
+#[test]
+fn reverse_scrolling_negates_both_axes() {
+    let settings = Settings {
+        reverse_scrolling: true,
+        ..Settings::default()
+    };
+    assert_eq!(run_with(&settings, line(3.0, -3.0)), Some((-1.0, 1.0)));
+    // After the Shift fold.
+    assert_eq!(
+        run_with(&settings, line_with_shift(1.0, 0.0)),
+        Some((0.0, -1.0))
+    );
+    // A grouped precise step is negated too.
+    assert_eq!(
+        run_with(&settings, pixel_phase(0.0, 40.0, 2.0, Phase::Started)),
+        Some((0.0, -1.0))
+    );
+}
+
+#[test]
+fn reverse_hotbar_only_negates_the_hotbar_vertical() {
+    let settings = Settings {
+        reverse_hotbar: true,
+        ..Settings::default()
+    };
+    assert_eq!(run_with(&settings, line(3.0, -3.0)), Some((1.0, -1.0)));
+    let hotbar = WheelIn {
+        zone: Zone::Hotbar,
+        ..line(3.0, -3.0)
+    };
+    assert_eq!(run_with(&settings, hotbar), Some((1.0, 1.0)));
+}
+
+#[test]
+fn both_reverse_options_stack() {
+    let settings = Settings {
+        reverse_scrolling: true,
+        reverse_hotbar: true,
+        ..Settings::default()
+    };
+    let hotbar = WheelIn {
+        zone: Zone::Hotbar,
+        ..line(3.0, -3.0)
+    };
+    // clamp (1, -1) -> general reverse (-1, 1) -> hotbar (-1, -1)
+    assert_eq!(run_with(&settings, hotbar), Some((-1.0, -1.0)));
+}
+
+#[test]
+fn the_attack_lock_only_swallows_the_hotbar() {
+    let lock = Settings {
+        lock_scroll_while_attacking: true,
+        ..Settings::default()
+    };
+    let attacking_hotbar = WheelIn {
+        zone: Zone::Hotbar,
+        attacking: true,
+        ..line(0.0, 1.0)
+    };
+    assert_eq!(run_with(&lock, attacking_hotbar), None);
+
+    let idle_hotbar = WheelIn {
+        zone: Zone::Hotbar,
+        attacking: false,
+        ..line(0.0, 1.0)
+    };
+    assert_eq!(run_with(&lock, idle_hotbar), Some((0.0, 1.0)));
+
+    let attacking_gui = WheelIn {
+        zone: Zone::Gui,
+        attacking: true,
+        ..line(0.0, 1.0)
+    };
+    assert_eq!(run_with(&lock, attacking_gui), Some((0.0, 1.0)));
+
+    // Off by default.
+    assert_eq!(
+        run_with(&Settings::default(), attacking_hotbar),
+        Some((0.0, 1.0))
+    );
+}
+
+#[test]
+fn momentum_is_gated_for_the_hotbar_only() {
+    let settings = Settings::default();
+    let hotbar_momentum = WheelIn {
+        zone: Zone::Hotbar,
+        momentum: true,
+        ..line(0.0, 1.0)
+    };
+    assert_eq!(run_with(&settings, hotbar_momentum), None);
+
+    let gui_momentum = WheelIn {
+        zone: Zone::Gui,
+        momentum: true,
+        ..line(0.0, 1.0)
+    };
+    assert_eq!(run_with(&settings, gui_momentum), Some((0.0, 1.0)));
+
+    let allowed = Settings {
+        momentum_hotbar: true,
+        ..Settings::default()
+    };
+    assert_eq!(run_with(&allowed, hotbar_momentum), Some((0.0, 1.0)));
+}
+
+#[test]
+fn the_hotbar_merge_folds_the_horizontal_axis() {
+    let merge = Settings {
+        merge_horizontal_into_vertical: true,
+        ..Settings::default()
+    };
+    // clamp first: (1, 1), then y += x -> (0, 2)
+    let hotbar = WheelIn {
+        zone: Zone::Hotbar,
+        ..line(1.0, 2.0)
+    };
+    assert_eq!(run_with(&merge, hotbar), Some((0.0, 2.0)));
+    assert_eq!(run_with(&merge, line(1.0, 2.0)), Some((1.0, 1.0)));
+
+    let merged_reversed = Settings {
+        merge_horizontal_into_vertical: true,
+        reverse_hotbar: true,
+        ..Settings::default()
+    };
+    assert_eq!(run_with(&merged_reversed, hotbar), Some((0.0, -2.0)));
+}
+
+#[test]
+fn an_empty_config_is_the_defaults() {
+    assert_eq!(parse_config(""), Settings::default());
+    assert_eq!(
+        parse_config("# only a comment\n\n   \n"),
+        Settings::default()
+    );
+}
+
+#[test]
+fn the_config_reads_every_key_over_the_defaults() {
+    let text = "\
+shift_wheel_fold = false
+clamp_legacy_wheel = false
+points_per_notch = 33.5
+reverse_scrolling = true
+reverse_hotbar = true
+momentum_hotbar = true
+lock_scroll_while_attacking = true
+merge_horizontal_into_vertical = true
+";
+    let expected = Settings {
+        shift_wheel_fold: false,
+        clamp_legacy_wheel: false,
+        points_per_notch: 33.5,
+        reverse_scrolling: true,
+        reverse_hotbar: true,
+        momentum_hotbar: true,
+        lock_scroll_while_attacking: true,
+        merge_horizontal_into_vertical: true,
+    };
+    assert_eq!(parse_config(text), expected);
+}
+
+#[test]
+fn a_partial_config_keeps_the_other_defaults() {
+    let settings = parse_config("points_per_notch = 12.5\nreverse_hotbar = true\n");
+    assert_eq!(settings.points_per_notch, 12.5);
+    assert!(settings.reverse_hotbar);
+    assert!(settings.shift_wheel_fold);
+    assert!(settings.clamp_legacy_wheel);
+}
+
+#[test]
+fn comments_whitespace_and_crlf_are_accepted() {
+    let text = "\u{feff}  # leading comment\r\n\r\n  shift_wheel_fold\t=\tfalse  # inline\r\npoints_per_notch = 20\n";
+    let settings = parse_config(text);
+    assert!(!settings.shift_wheel_fold);
+    assert_eq!(settings.points_per_notch, 20.0);
+}
+
+#[test]
+fn unknown_keys_and_broken_lines_are_ignored() {
+    let text = "\
+what = ever
+no equals sign
+= true
+points_per_notch = nope
+points_per_notch = inf
+shift_wheel_fold = maybe
+";
+    assert_eq!(parse_config(text), Settings::default());
+}
+
+#[test]
+fn load_config_reads_a_file_and_misses_quietly() {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "macos-input-fixes-{}-{}.toml",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::write(&path, "points_per_notch = 42.0\n").unwrap();
+    assert_eq!(load_config(&path).unwrap().points_per_notch, 42.0);
+    std::fs::remove_file(&path).unwrap();
+    assert!(load_config(&path).is_none());
+}

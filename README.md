@@ -18,13 +18,13 @@ Early development, on the way to a first release.
 | M0 — prove the `Game::handle_window_event` HEAD seam | done |
 | M1 — Shift + legacy wheel, one notch per event | done |
 | M2 — trackpad / Magic Mouse grouping, scale-aware notches | done |
-| M3 — reverse scrolling, lock while attacking, config file | planned |
+| M3 — reverse scrolling, lock while attacking, config file | done |
 | M4 — momentum gating (optional) | planned |
 | M5 — release docs, registry listing | planned |
 
-The engine has 16 unit test functions; the in-game checklist passed on
-2026-11-16. Pinned to Horizon
-`9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0` (Nightly 2026-11-13).
+The engine has 28 unit test functions. The M1–M2 in-game checklist passed on
+2026-11-16; the M3 options are unit-tested and still need an in-game pass.
+Pinned to Horizon `9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0` (Nightly 2026-11-13).
 
 ## What it fixes
 
@@ -58,11 +58,14 @@ untouched.
 
 ## What it does not do yet
 
-- **Momentum / inertia gating** (M4). After the fingers lift, inertia still
-  scrolls GUI lists and can keep moving the hotbar: winit 0.30 does not expose
-  macOS's momentum phase.
-- **Reverse scrolling, reverse hotbar, lock while attacking, a config file**
-  (M3). The defaults below are compiled in for now.
+- **Momentum detection** (M4). After the fingers lift, inertia still scrolls GUI
+  lists and can keep moving the hotbar: winit 0.30 does not expose macOS's
+  momentum phase. The `momentum_hotbar` gate exists in the engine, but the
+  helper always reports "no momentum" until M4.
+- **Cmd for whole-stack drop.** The plan's `accept_cmd_for_drop_stack` option is
+  deliberately not implemented: Horizon's quit shortcut is exactly Cmd+Q
+  (`horizon_client::input::is_quit_shortcut_down`, with `quit_shortcuts` on by
+  default), so dropping with Cmd would also be able to quit the game.
 - Display-P3 colour space, which is not an input fix.
 
 ## Requirements
@@ -102,21 +105,31 @@ the instance's installed mods:
 The mod changes no game files on disk; the built game version is the only
 artifact.
 
-## Defaults
+## Configuration
 
-These are the engine's compiled-in values. M3 adds a config file to change them;
-the milestones column says when each becomes active.
+The mod reads one optional file from the game directory:
 
-| Key | Default | State |
+```
+<game home>/config/macos-input-fixes.toml
+# e.g. ~/Library/Application Support/horizon/config/macos-input-fixes.toml
+```
+
+Copy [`config/macos-input-fixes.toml.example`](config/macos-input-fixes.toml.example)
+as a starting point. The file is read once, on the first wheel event of a
+session; restart the game to reload it. A missing file, unknown keys, malformed
+values and broken lines are ignored, so every unreadable setting keeps its
+default and a bad config cannot break scrolling.
+
+| Key | Default | Meaning |
 |---|---|---|
-| `shift_wheel_fold` | `true` | active (MC-121772) |
-| `clamp_legacy_wheel` | `true` | active |
-| `points_per_notch` | `20.0` | active; `0.0` would leave precise deltas alone |
-| `reverse_scrolling` | `false` | M3 |
-| `reverse_hotbar` | `false` | M3 |
-| `lock_scroll_while_attacking` | `false` | M3 |
-| `momentum_hotbar` | `false` | M3/M4 |
-| `merge_horizontal_into_vertical` | `false` | M3 |
+| `shift_wheel_fold` | `true` | MC-121772: fold macOS's Shift-moved horizontal delta into vertical |
+| `clamp_legacy_wheel` | `true` | one legacy wheel event is exactly one notch |
+| `points_per_notch` | `20.0` | trackpad/Magic Mouse GUI points per notch; `0.0` leaves precise deltas to Horizon |
+| `reverse_scrolling` | `false` | negate both axes everywhere |
+| `reverse_hotbar` | `false` | negate the hotbar's vertical axis only |
+| `lock_scroll_while_attacking` | `false` | swallow the wheel while attack or use is held (hotbar only) |
+| `momentum_hotbar` | `false` | let post-release inertia move the hotbar; needs M4 detection, no-op today |
+| `merge_horizontal_into_vertical` | `false` | the Java mod's hotbar merge; Horizon already falls back to `-x` |
 
 ## Deviations from vanilla
 
@@ -126,6 +139,8 @@ This is deliberately not a parity mod. Everything it changes is a deviation:
 - One legacy wheel event is exactly one notch, whatever macOS acceleration says.
 - A trackpad flick is grouped into one or two notches instead of one notch per
   pixel event; the threshold is `points_per_notch` and is scale-aware.
+- Reverse scrolling, reverse hotbar, the attack lock and the hotbar merge are
+  extra options, off by default; turning them on is a deviation too.
 
 ## Development
 
@@ -142,10 +157,11 @@ horizon-mixins check --workspace <horizon-source> --mods mixins \
 milestone.
 
 ```
+config/macos-input-fixes.toml.example   # for <game home>/config
 mixins/macos-input-fixes/
 ├── horizon-mixin.toml     # the bundle manifest: one HEAD injection, one crate
-├── src/wheel_head.rs      # the helper: winit event -> engine -> line delta
-└── engine/                # dependency-free maths + tests
+├── src/wheel_head.rs      # the helper: winit event + config -> engine -> delta
+└── engine/                # dependency-free maths, config parser + tests
 ```
 
 ## License

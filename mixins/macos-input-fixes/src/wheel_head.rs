@@ -23,6 +23,12 @@ fn wheel_head(
     let winit::event::WindowEvent::MouseWheel { delta, phase, .. } = event else {
         return;
     };
+    // The config lives in the game directory (the launcher's `horizon` home,
+    // not the repository) and is read once, on the first wheel event. A
+    // missing or broken file leaves the defaults in place; restart to reload.
+    engine::init_config(
+        &horizon_client::logging::game_home().join("config/macos-input-fixes.toml"),
+    );
     let engine_delta = match *delta {
         // Legacy wheel: already notches; shift folding and clamping apply.
         winit::event::MouseScrollDelta::LineDelta(x, y) => {
