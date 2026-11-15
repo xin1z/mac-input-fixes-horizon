@@ -8,6 +8,11 @@ priority = 100
 [compatibility]
 horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
 
+[[crate]]
+id = "engine"
+path = "engine"
+dependent = "horizon-client"
+
 [[injection]]
 id = "wheel-head"
 target = "horizon_client::game::window_handler::Game<'_>::handle_window_event"

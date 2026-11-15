@@ -2,3 +2,4 @@
 /.build/
 *.hnmod
 .DS_Store
+mixins/*/engine/Cargo.lock
