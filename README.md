@@ -11,7 +11,8 @@ build: it is a source mixin bundle that Horizon's launcher compiles into the gam
 
 ## Status
 
-Early development, on the way to a first release.
+Version 0.1.0: M0–M3 are implemented; M4 (momentum detection) is deferred as optional.
+M5 covers the release docs and the source-only `.hnmod` artifact.
 
 | Milestone | State |
 |---|---|
@@ -19,8 +20,8 @@ Early development, on the way to a first release.
 | M1 — Shift + legacy wheel, one notch per event | done |
 | M2 — trackpad / Magic Mouse grouping, scale-aware notches | done |
 | M3 — reverse scrolling, lock while attacking, config file | done |
-| M4 — momentum gating (optional) | planned |
-| M5 — release docs, registry listing | planned |
+| M4 — momentum detection (optional) | deferred |
+| M5 — release docs and packaging | done (registry listing optional) |
 
 The engine has 28 unit test functions. The M1–M2 in-game checklist passed on
 2026-11-16; the M3 options are unit-tested and still need an in-game pass.
@@ -66,6 +67,10 @@ untouched.
   deliberately not implemented: Horizon's quit shortcut is exactly Cmd+Q
   (`horizon_client::input::is_quit_shortcut_down`, with `quit_shortcuts` on by
   default), so dropping with Cmd would also be able to quit the game.
+- **An in-game settings page.** Bundle mods have no documented way to declare
+  option rows, so v1 reads the config file only. (A native mod can add an
+  Options > Mods page through the same hooks Fullbright uses; that is a future
+  feature, not part of this release.)
 - Display-P3 colour space, which is not an input fix.
 
 ## Requirements
@@ -81,7 +86,7 @@ From a checkout of this repository:
 
 ```sh
 /Applications/Horizon.app/Contents/MacOS/horizon-launcher native-build \
-  /path/to/this/repo/mixins/macos-input-fixes \
+  /path/to/this/repo/mixins/macos_input_fixes \
   --trust-native-code
 ```
 
@@ -89,7 +94,18 @@ From a checkout of this repository:
 with your user account's rights, so read the source first. The launcher builds a
 game with the mod and selects it for the instance; start it with the launcher.
 
-The bundle lives in `mixins/macos-input-fixes/`. The repository root is not
+Once the repository has a release with the `.hnmod` asset, the launcher can
+install it directly (this also resolves the source at the release's commit):
+
+```sh
+horizon-launcher mods add-github \
+  https://github.com/xin1z/mac-input-fixes-horizon \
+  --all --trust-native-code
+```
+
+The registry listing is optional.
+
+The bundle lives in `mixins/macos_input_fixes/`. The repository root is not
 itself a bundle: Horizon's tooling requires a bundle directory for bundle
 crates such as `engine/`.
 
@@ -105,16 +121,30 @@ the instance's installed mods:
 The mod changes no game files on disk; the built game version is the only
 artifact.
 
+## Release artifact
+
+`tools/package.py` builds the source-only `.hnmod` that the launcher and the
+registry read:
+
+```sh
+python3 tools/package.py
+# target/macos_input_fixes-0.1.0.hnmod, with its size and SHA-256
+```
+
+The archive is deterministic and holds `horizon-native.json` plus the bundle
+under `mixins/macos_input_fixes/` (Rust, TOML and data only). Attach it to a
+GitHub release and the launcher can install from there.
+
 ## Configuration
 
 The mod reads one optional file from the game directory:
 
 ```
-<game home>/config/macos-input-fixes.toml
-# e.g. ~/Library/Application Support/horizon/config/macos-input-fixes.toml
+<game home>/config/macos_input_fixes.toml
+# e.g. ~/Library/Application Support/horizon/config/macos_input_fixes.toml
 ```
 
-Copy [`config/macos-input-fixes.toml.example`](config/macos-input-fixes.toml.example)
+Copy [`config/macos_input_fixes.toml.example`](config/macos_input_fixes.toml.example)
 as a starting point. The file is read once, on the first wheel event of a
 session; restart the game to reload it. A missing file, unknown keys, malformed
 values and broken lines are ignored, so every unreadable setting keeps its
@@ -146,22 +176,21 @@ This is deliberately not a parity mod. Everything it changes is a deviation:
 
 ```sh
 # Engine unit tests (the crate has no dependencies):
-cargo test --manifest-path mixins/macos-input-fixes/engine/Cargo.toml
+cargo test --manifest-path mixins/macos_input_fixes/engine/Cargo.toml
 
 # Compile the bundle into a staged Horizon and run the game crate's tests:
 horizon-mixins check --workspace <horizon-source> --mods mixins \
   --out <fresh-stage> --trust-native-mods --package horizon-client
 ```
 
-`NOTES.md` records the verified seam facts, decisions and evidence for each
-milestone.
-
 ```
-config/macos-input-fixes.toml.example   # for <game home>/config
-mixins/macos-input-fixes/
+compatibility.json                     # Horizon + horizon-mixins pins, checked by the packer
+config/macos_input_fixes.toml.example   # for <game home>/config
+mixins/macos_input_fixes/
 ├── horizon-mixin.toml     # the bundle manifest: one HEAD injection, one crate
 ├── src/wheel_head.rs      # the helper: winit event + config -> engine -> delta
 └── engine/                # dependency-free maths, config parser + tests
+tools/package.py                       # deterministic source-only .hnmod packer
 ```
 
 ## License

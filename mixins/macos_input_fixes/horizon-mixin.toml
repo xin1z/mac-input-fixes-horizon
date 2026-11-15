@@ -1,5 +1,5 @@
 [mod]
-id = "macos-input-fixes"
+id = "macos_input_fixes"
 version = "0.1.0"
 priority = 100
 

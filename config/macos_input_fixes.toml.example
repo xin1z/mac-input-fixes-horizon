@@ -2,10 +2,10 @@
 #
 # Copy this file to the game directory and edit:
 #
-#   ~/Library/Application Support/horizon/config/macos-input-fixes.toml
+#   ~/Library/Application Support/horizon/config/macos_input_fixes.toml
 #
 # The launcher's game home is where `options.txt` lives; the mod reads
-# `<game home>/config/macos-input-fixes.toml` once, on the first wheel event of
+# `<game home>/config/macos_input_fixes.toml` once, on the first wheel event of
 # a session. Restart the game to reload it.
 #
 # Missing file, unknown keys, malformed values and broken lines are ignored:

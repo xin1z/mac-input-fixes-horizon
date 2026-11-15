@@ -27,7 +27,7 @@ fn wheel_head(
     // not the repository) and is read once, on the first wheel event. A
     // missing or broken file leaves the defaults in place; restart to reload.
     engine::init_config(
-        &horizon_client::logging::game_home().join("config/macos-input-fixes.toml"),
+        &horizon_client::logging::game_home().join("config/macos_input_fixes.toml"),
     );
     let engine_delta = match *delta {
         // Legacy wheel: already notches; shift folding and clamping apply.
