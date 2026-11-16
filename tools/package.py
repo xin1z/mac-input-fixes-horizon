@@ -85,6 +85,12 @@ def main() -> None:
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         ).encode()
     }
+    # The licence and the third-party notice travel with the sources: the
+    # bundle reader accepts LICENSE*/NOTICE* text at mixins/<id>/.
+    for name, source in (("LICENSE", "LICENSE"), ("NOTICE.md", "THIRD_PARTY_NOTICES.md")):
+        path = ROOT / source
+        if path.is_file():
+            files[f"mixins/{mod['id']}/{name}"] = path.read_bytes()
     for path in sorted(bundle.rglob("*")):
         if path.is_symlink():
             fail(f"symlinks are not allowed in a bundle: {path}")

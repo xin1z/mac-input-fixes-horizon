@@ -132,8 +132,8 @@ python3 tools/package.py
 ```
 
 The archive is deterministic and holds `horizon-native.json` plus the bundle
-under `mixins/macos_input_fixes/` (Rust, TOML and data only). Attach it to a
-GitHub release and the launcher can install from there.
+under `mixins/macos_input_fixes/` (Rust, TOML, data and the licence/notice
+text). Attach it to a GitHub release and the launcher can install from there.
 
 ## Configuration
 
@@ -186,6 +186,7 @@ horizon-mixins check --workspace <horizon-source> --mods mixins \
 ```
 compatibility.json                     # Horizon + horizon-mixins pins, checked by the packer
 config/macos_input_fixes.toml.example   # for <game home>/config
+icon.png                               # 256×256 launcher / registry icon
 mixins/macos_input_fixes/
 ├── horizon-mixin.toml     # the bundle manifest: one HEAD injection, one crate
 ├── src/wheel_head.rs      # the helper: winit event + config -> engine -> delta
