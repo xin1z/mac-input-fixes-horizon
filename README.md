@@ -133,7 +133,23 @@ python3 tools/package.py
 
 The archive is deterministic and holds `horizon-native.json` plus the bundle
 under `mixins/macos_input_fixes/` (Rust, TOML, data and the licence/notice
-text). Attach it to a GitHub release and the launcher can install from there.
+text). Sign it, then attach the `.hnmod` and its `.minisig` to a GitHub release
+and the launcher can install from there.
+
+## Verifying a release
+
+Release files are signed with [minisign](https://jedisct1.github.io/minisign/).
+The public key is [macos_input_fixes.pub](macos_input_fixes.pub) (fingerprint
+`AF7C7026617FEF25`). Download the `.hnmod` and its `.minisig` from the release,
+then:
+
+```sh
+minisign -V -p macos_input_fixes.pub -m macos_input_fixes-0.1.0.hnmod
+# Signature and comment signature verified
+```
+
+The registry entry carries the same key and signature, and the launcher checks
+them before installing. The secret key is never published.
 
 ## Configuration
 

@@ -3,3 +3,6 @@
 *.hnmod
 .DS_Store
 mixins/*/engine/Cargo.lock
+
+# never commit a minisign secret key
+*.key
