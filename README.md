@@ -1,5 +1,11 @@
 # macOS input fixes for Horizon
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/xin1z/mac-input-fixes-horizon?style=flat-square)](https://github.com/xin1z/mac-input-fixes-horizon/releases)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)](#requirements)
+[![Horizon: 26.3 Nightly 2026-11-13](https://img.shields.io/badge/Horizon-26.3%20Nightly%202026--11--13-blue?style=flat-square)](#requirements)
+[![Signed with minisign](https://img.shields.io/badge/signed-minisign-brightgreen?style=flat-square)](macos_input_fixes.pub)
+
 An unofficial native-mod port of [MCMacOSInputFixes] to [Horizon], the Rust
 rewrite of Minecraft: Java Edition. It ports the mod's macOS scrolling fixes, so
 scrolling behaves the way players of the Fabric mod expect instead of the way
