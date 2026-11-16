@@ -1,9 +1,9 @@
 # macOS input fixes for Horizon
 
 An unofficial native-mod port of [MCMacOSInputFixes] to [Horizon], the Rust
-rewrite of Minecraft: Java Edition. It makes scrolling on macOS behave the way
-players of the Fabric mod expect, instead of the way macOS's event translation
-and vanilla's wheel handling leave it.
+rewrite of Minecraft: Java Edition. It ports the mod's macOS scrolling fixes, so
+scrolling behaves the way players of the Fabric mod expect instead of the way
+macOS's event translation and Horizon's wheel handling leave it.
 
 Not affiliated with or endorsed by the original author, Mojang, Microsoft or the
 Horizon project. This is not a Fabric mod and shares no code with the Java
@@ -21,7 +21,7 @@ M5 covers the release docs and the source-only `.hnmod` artifact.
 | M2 — trackpad / Magic Mouse grouping, scale-aware notches | done |
 | M3 — reverse scrolling, lock while attacking, config file | done |
 | M4 — momentum detection (optional) | deferred |
-| M5 — release docs and packaging | done (registry listing optional) |
+| M5 — release docs and packaging | done (registry listing optional; under review) |
 
 The engine has 28 unit test functions. The M1–M2 in-game checklist passed on
 2026-11-16; the M3 options are unit-tested and still need an in-game pass.
@@ -30,19 +30,21 @@ Pinned to Horizon `9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0` (Nightly 2026-11-13
 ## What it fixes
 
 - **MC-121772 — Shift + scroll.** With Shift held, macOS moves a legacy wheel
-  event's vertical delta onto the horizontal axis. Horizon, like vanilla, reads
-  only the vertical axis, so lists did not scroll and the hotbar went the wrong
-  way. The mod folds the axis back before Horizon sees the event.
+  event's vertical delta onto the horizontal axis. This is the old mouse-event
+  path; trackpads are unaffected. Horizon's screens read the vertical axis (so
+  they did not scroll), and the hotbar's fallback reads the horizontal axis with
+  the opposite sign (so it was inverted). The mod folds the axis back before
+  Horizon sees the event.
 - **Legacy wheel acceleration.** macOS can report several or fractional lines
   for one physical notch on a wheel mouse. The mod makes one legacy event
   exactly one notch, removing the "two slots per click" jitter.
 - **Trackpad and Magic Mouse flicks.** Precise events are streams of tiny pixel
-  deltas; Horizon turns every one into a wheel notch, so one flick could scroll
-  a whole inventory and its speed varied with the flick. The mod groups a
-  gesture into whole notches (`points_per_notch`, default 20 GUI points), emits
-  one notch when the gesture starts, and keeps the remainder for the rest of it.
-  It also divides by the window scale factor, so the same physical flick moves
-  the same amount on a Retina and a 1× display.
+  deltas; Horizon reads each event's pixels as wheel movement (divided by 30),
+  so one flick could scroll far more rows than intended, and how far depended on
+  the flick. The mod groups a gesture into whole notches (`points_per_notch`,
+  default 20 GUI points), emits one notch when the gesture starts, and keeps the
+  remainder for the rest of it. It also divides by the window scale factor, so
+  the same physical flick moves the same amount on a Retina and a 1× display.
 
 ## Already handled by Horizon (not touched here)
 
@@ -60,25 +62,29 @@ untouched.
 ## What it does not do yet
 
 - **Momentum detection** (M4). After the fingers lift, inertia still scrolls GUI
-  lists and can keep moving the hotbar: winit 0.30 does not expose macOS's
-  momentum phase. The `momentum_hotbar` gate exists in the engine, but the
-  helper always reports "no momentum" until M4.
-- **Cmd for whole-stack drop.** The plan's `accept_cmd_for_drop_stack` option is
+  lists and can keep moving the hotbar: winit 0.30 folds macOS's momentum phase
+  into `TouchPhase`, so it cannot be told apart reliably. The `momentum_hotbar`
+  gate exists in the engine, but the helper always reports "no momentum" until
+  M4.
+- **Cmd for whole-stack drop.** An `accept_cmd_for_drop_stack` option is
   deliberately not implemented: Horizon's quit shortcut is exactly Cmd+Q
   (`horizon_client::input::is_quit_shortcut_down`, with `quit_shortcuts` on by
   default), so dropping with Cmd would also be able to quit the game.
-- **An in-game settings page.** Bundle mods have no documented way to declare
-  option rows, so v1 reads the config file only. (A native mod can add an
-  Options > Mods page through the same hooks Fullbright uses; that is a future
-  feature, not part of this release.)
+- **An in-game settings page.** There is no documented bundle-level way to
+  declare option rows, so v1 reads the config file only. (The launcher's native
+  hook points could add an Options > Mods page, as Fullbright does, but that is a
+  future feature with more injection surface, not part of this release.)
 - Display-P3 colour space, which is not an input fix.
 
 ## Requirements
 
-- macOS. The fixes are gated on `cfg!(target_os = "macos")`; on other platforms
-  the bundle compiles and does nothing.
+- macOS. The handler is gated on `cfg!(target_os = "macos")`; on other
+  platforms it does nothing.
 - Horizon built from the pinned commit above. Native mods are source mixins, so
   the launcher builds a game for the commit the mod pins.
+- This release is the `.hnmod` source-mixin format of that Nightly. Horizon's
+  newer `main` uses a flat native `.hmod` format, so install it with a launcher
+  that supports the pinned Nightly.
 
 ## Install
 
@@ -94,8 +100,9 @@ From a checkout of this repository:
 with your user account's rights, so read the source first. The launcher builds a
 game with the mod and selects it for the instance; start it with the launcher.
 
-Once the repository has a release with the `.hnmod` asset, the launcher can
-install it directly (this also resolves the source at the release's commit):
+With a launcher that supports this Nightly's `.hnmod` format, the release can
+be installed directly; the launcher records the repository and release as its
+origin:
 
 ```sh
 horizon-launcher mods add-github \
@@ -118,8 +125,8 @@ the instance's installed mods:
 /Applications/Horizon.app/Contents/MacOS/horizon-launcher native-build
 ```
 
-The mod changes no game files on disk; the built game version is the only
-artifact.
+It changes no world, save or options file; the built game version and the
+launcher's mod metadata are the only artifacts.
 
 ## Release artifact
 
@@ -148,8 +155,8 @@ minisign -V -p macos_input_fixes.pub -m macos_input_fixes-0.1.0.hnmod
 # Signature and comment signature verified
 ```
 
-The registry entry carries the same key and signature, and the launcher checks
-them before installing. The secret key is never published.
+The registry entry carries the same key and signature; for registry installs
+the launcher checks both before installing. The secret key is never published.
 
 ## Configuration
 
@@ -183,8 +190,9 @@ This is deliberately not a parity mod. Everything it changes is a deviation:
 
 - Shift+wheel scrolls lists vertically instead of doing nothing.
 - One legacy wheel event is exactly one notch, whatever macOS acceleration says.
-- A trackpad flick is grouped into one or two notches instead of one notch per
-  pixel event; the threshold is `points_per_notch` and is scale-aware.
+- A trackpad flick is grouped into (typically) one or two notches instead of
+  every tiny pixel event scrolling immediately; the threshold is
+  `points_per_notch` and is scale-aware.
 - Reverse scrolling, reverse hotbar, the attack lock and the hotbar merge are
   extra options, off by default; turning them on is a deviation too.
 
