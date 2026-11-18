@@ -1,0 +1,25 @@
+id = "macos_input_fixes"
+name = "macOS input fixes for Horizon"
+version = "0.2.0"
+description = "Unofficial native port of MCMacOSInputFixes: Shift+wheel, one notch per click, and trackpad gesture grouping for Horizon."
+authors = ["xin1z"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+# The old handler took `mut event`; the new `handle_window_event_as` is the same seam.
+[[native.mixin]]
+id = "wheel-head"
+target = "horizon_client::game::window_handler::Game::handle_window_event_as"
+kind = "HEAD"
+helper = "src/mixins/wheel_head.rs"
+bindings = [
+    { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+    { name = "event", ty = "&mut winit::event::WindowEvent", value = "&mut event" },
+    { name = "origin", ty = "crate::game::input_trace::InputOrigin", value = "origin" },
+]

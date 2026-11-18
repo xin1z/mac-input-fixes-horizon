@@ -1,8 +1,10 @@
 /target/
 /.build/
+/.horizon/
 *.hnmod
+*.hmod
+*.minisig
 .DS_Store
-mixins/*/engine/Cargo.lock
 
 # never commit a minisign secret key
 *.key
