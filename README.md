@@ -39,7 +39,7 @@ M5 covers the release docs and the native package.
 
 The engine has 28 unit test functions, all passing. The 0.1.0 `.hnmod` in-game
 checklist passed on 2026-11-16; the 0.2.0 `.hmod` still needs an in-game pass on
-launcher 0.2.70 or newer. Pinned to Horizon `0b14f8acfd97fa2c750e42795249dcc981178ca4`
+launcher 0.2.70 or newer. Pinned to Horizon `dd67b76ff23e28c6d8e21859df600d31572f81a0`
 (Nightly 2026-11-18), Horizon Mixins `e59da9094f0c2fdda6c627fe9eff22dec6a906f0`.
 
 ## What it fixes
@@ -92,7 +92,7 @@ untouched.
 
 - macOS. The helper is gated on `cfg!(target_os = "macos")`; on other platforms
   it does nothing.
-- Horizon `0b14f8acfd97fa2c750e42795249dcc981178ca4` (Nightly 2026-11-18,
+- Horizon `dd67b76ff23e28c6d8e21859df600d31572f81a0` (Nightly 2026-11-18,
   Minecraft 26.3), with its matching SDK. The manifest pins the exact Horizon
   and Horizon Mixins revisions.
 - Horizon Launcher **0.2.70 or newer**. Launchers before 0.2.70 cannot load
